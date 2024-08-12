@@ -1,7 +1,14 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
+    repositories {
+        google()
+    }
+
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.3.2'
+        classpath 'com.android.tools.build:gradle:8.4.0'
+
+        // Dependência Bluetooth
+        //implementation "androidx.bluetooth:bluetooth:1.1.0"
     }
 }
 
