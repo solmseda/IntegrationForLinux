@@ -31,11 +31,30 @@
         android:layout_marginTop="20dp"
         android:layout_centerHorizontal="true" />
 
+    <!-- Novo botão para iniciar o cliente Bluetooth -->
+    <Button
+        android:id="@+id/startClientButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Iniciar Cliente"
+        android:layout_below="@+id/scanDevicesButton"
+        android:layout_marginTop="20dp"
+        android:layout_centerHorizontal="true" />
+
+    <TextView
+        android:id="@+id/discoveredDevicesTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/startClientButton"
+        android:layout_marginTop="10dp"
+        android:text=""
+        android:textAppearance="?attr/textAppearanceListItem" />
+
     <ListView
         android:id="@+id/deviceListView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/scanDevicesButton"
+        android:layout_below="@+id/discoveredDevicesTextView"
         android:layout_marginTop="20dp" />
 
 </RelativeLayout>

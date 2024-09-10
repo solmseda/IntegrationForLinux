@@ -9,8 +9,10 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.AsyncTask
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -52,21 +54,26 @@ class BluetoothConnectionManager(private val context: Context) {
                 == PackageManager.PERMISSION_GRANTED
             ) {
                 try {
+                    Log.i("BluetoothClient", "Tentando criar socket de conexão com o dispositivo.")
                     bluetoothSocket = device.createRfcommSocketToServiceRecord(uuid)
+
+                    Log.i("BluetoothClient", "Tentando conectar ao dispositivo ${device.name} (${device.address})")
                     bluetoothSocket?.connect()
+
+                    Log.i("BluetoothClient", "Conectado ao dispositivo ${device.name} (${device.address})")
                     manageConnection(bluetoothSocket)
                 } catch (e: SecurityException) {
-                    // Handle SecurityException (e.g., request permission or show an error message)
-                    e.printStackTrace()
-                    // You might need to request permission here if it's not granted
-                    // Consider using a Handler to interact with the UI thread if needed
+                    Log.e("BluetoothClient", "Erro de segurança ao tentar conectar: ${e.message}", e)
+                    // Mostre uma mensagem ao usuário ou solicite a permissão necessária
+                } catch (e: IOException) {
+                    Log.e("BluetoothClient", "Erro de I/O ao tentar conectar: ${e.message}", e)
+                    // Tentativa de reconexão ou informar o usuário
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("BluetoothClient", "Erro inesperado ao tentar conectar: ${e.message}", e)
                 }
             } else {
-                // Request the BLUETOOTH_CONNECT permission
-                // You might need to use a Handler to interact with the UI thread
-                // to request permissions and handle the result
+                Log.e("BluetoothClient", "Permissão BLUETOOTH_CONNECT não concedida.")
+                // Solicitar permissão ou informar o usuário
             }
         }
     }
@@ -83,7 +90,7 @@ class BluetoothConnectionManager(private val context: Context) {
     }
 
     fun authenticate() {
-        // TODO: Implement authentication logic
+        // TODO
     }
 
     fun sendNotification(notificationData: NotificationData) {
@@ -122,7 +129,7 @@ class BluetoothConnectionManager(private val context: Context) {
 
 data class NotificationData(val appName: String, val content: String, val icon: ByteArray) {
     fun toByteArray(): ByteArray {
-        // TODO: Implement conversion logic
+        // TODO
         return byteArrayOf()
     }
 }
