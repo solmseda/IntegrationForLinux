@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedDevice: BluetoothDevice? = null
     private var isRequestingPermission = false // Flag para evitar múltiplas solicitações de permissão
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -75,11 +76,6 @@ class MainActivity : AppCompatActivity() {
             val deviceAddress = deviceInfo.substring(deviceInfo.length - 17)
             selectedDevice = bluetoothAdapter.getRemoteDevice(deviceAddress)
             statusTextView.text = "Dispositivo selecionado: $deviceAddress"
-        }
-
-        // Verificar e solicitar permissões no início
-        if (!checkPermissions()) {
-            requestBluetoothPermissions()
         }
     }
 
