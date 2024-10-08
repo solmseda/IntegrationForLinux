@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var discoveredDevicesCount = 0
     private var isRequestingPermission = false
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
