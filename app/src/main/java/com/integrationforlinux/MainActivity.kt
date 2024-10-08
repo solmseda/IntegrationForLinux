@@ -27,11 +27,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var discoveredDevicesTextView: TextView
 
     private var selectedDevice: BluetoothDevice? = null
-    private var isRequestingPermission = false // Flag para evitar múltiplas solicitações de permissão
+    private var discoveredDevicesCount = 0
+    private var isRequestingPermission = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Verifica se o dispositivo conta com Bluetooth
+        if(!bluetoothConnectionManager.checkBluetoothAvailability(bluetoothAdapter)) finish()
+
+        bluetoothConnectionManager.checkBluetoothEnabled()
+
+        bluetoothConnectionManager.checkAndRequestBluetoothPermissions()
 
         // Inicializar os componentes da UI
         statusTextView = findViewById(R.id.statusTextView)
@@ -49,10 +57,6 @@ class MainActivity : AppCompatActivity() {
         val deviceList: MutableList<String> = mutableListOf()
         val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, deviceList)
         listView.adapter = adapter
-
-        if(!checkPermissions()){
-            requestBluetoothPermissions()
-        }
 
         createServerButton.setOnClickListener {
             createServer()
@@ -76,100 +80,34 @@ class MainActivity : AppCompatActivity() {
             selectedDevice = bluetoothAdapter.getRemoteDevice(deviceAddress)
             statusTextView.text = "Dispositivo selecionado: $deviceAddress"
         }
-
-        // Verificar e solicitar permissões no início
-        if (!checkPermissions()) {
-            requestBluetoothPermissions()
-        }
     }
 
-    private fun checkPermissions(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Permissões necessárias para o o android 12 e superior (API 31 e superior)
-            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED
-        } else {
-            // Permissões necessárias para o o android 11 e anterior
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-
-    private fun requestBluetoothPermissions() {
-        if (!isRequestingPermission) {
-            isRequestingPermission = true
+    private fun scanDevices() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+            != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.BLUETOOTH_ADVERTISE
-                ),
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN),
                 REQUEST_BLUETOOTH_SCAN
             )
+            return
         }
-    }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        isRequestingPermission = false
-        if (requestCode == REQUEST_BLUETOOTH_SCAN) {
-            if ((grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED })) {
-                Log.i("BluetoothScan", "Permissões concedidas. Pronto para iniciar o scan.")
-                discoveredDevicesTextView.text = "Permissão para Bluetooth concedida. Pronto para procurar dispositivos"
-            } else {
-                Log.w("BluetoothScan", "Permissão para Bluetooth não concedida")
-                discoveredDevicesTextView.text = "Permissão para Bluetooth não concedida. Não é possível escanear dispositivos."
-            }
+        if (bluetoothAdapter.isDiscovering) {
+            bluetoothAdapter.cancelDiscovery() // Para qualquer busca anterior
         }
+
+        statusTextView.text = "Procurando dispositivos..."
+        discoveredDevicesTextView.text = "Dispositivos descobertos aparecerão abaixo."
+        discoveredDevicesCount = 0 // Reinicializar o contador de dispositivos encontrados
+
+        // Iniciar a busca por dispositivos Bluetooth
+        bluetoothAdapter.startDiscovery()
     }
 
     private fun createServer() {
         bluetoothConnectionManager.startServer()
         statusTextView.text = "Servidor criado com sucesso"
-    }
-
-    private fun scanDevices() {
-        Log.d("BluetoothScan", "scanDevices chamado")
-        discoveredDevicesTextView.text = ""
-
-        if (!checkPermissions()) {
-            Log.w("BluetoothScan", "Permissões Bluetooth ainda não foram concedidas")
-            return
-        }
-
-        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
-            Log.e("BluetoothScan", "Adaptador Bluetooth não está disponível ou não está ativado.")
-            discoveredDevicesTextView.text = "Bluetooth não está ativado. Ative-o e tente novamente."
-            return
-        }
-
-        if (bluetoothAdapter.isDiscovering) {
-            bluetoothAdapter.cancelDiscovery()
-        }
-
-        try {
-            Log.i("BluetoothScan", "Tentando iniciar descoberta de dispositivos...")
-            val discoveryStarted = bluetoothAdapter.startDiscovery()
-            Log.d("BluetoothScan", "startDiscovery() retornou $discoveryStarted")
-
-            if (discoveryStarted) {
-                discoveredDevicesTextView.text = "Procurando dispositivos..."
-            } else {
-                Log.e("BluetoothScan", "Falha ao iniciar descoberta de dispositivos.")
-                discoveredDevicesTextView.text = "Erro ao iniciar a busca por dispositivos. Tente novamente."
-            }
-        } catch (e: Exception) {
-            Log.e("BluetoothScan", "Erro ao tentar iniciar a descoberta: ${e.message}", e)
-            discoveredDevicesTextView.text = "Erro ao iniciar a descoberta: ${e.message}"
-        }
     }
 
     private fun startClient() {
@@ -202,6 +140,9 @@ class MainActivity : AppCompatActivity() {
             add(deviceInfo)
             notifyDataSetChanged()
         }
+        // Incrementar o contador de dispositivos e atualizar o texto
+        discoveredDevicesCount++
+        discoveredDevicesTextView.text = "Dispositivos descobertos: $discoveredDevicesCount"
     }
 
     override fun onDestroy() {
