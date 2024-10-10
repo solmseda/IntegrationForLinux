@@ -8,7 +8,9 @@ import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.AsyncTask
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import android.os.Build
 import android.util.Log
 import android.widget.Toast
@@ -32,7 +34,6 @@ class BluetoothConnectionManager(private val context: Context) {
         private const val REQUEST_BLUETOOTH_PERMISSIONS = 101
     }
 
-    // Isso está sendo adicionado ao que tinha no diagrama original da proposta do projeto Final
     fun checkBluetoothAvailability(bluetoothAdapter: BluetoothAdapter?): Boolean {
         if (bluetoothAdapter == null) {
             Toast.makeText(context, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
@@ -59,26 +60,8 @@ class BluetoothConnectionManager(private val context: Context) {
                 != PackageManager.PERMISSION_GRANTED) {
                 permissionsNeeded.add(Manifest.permission.BLUETOOTH_ADVERTISE)
             }
-
-        } else {
-            // Para Android versões abaixo de 12
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.BLUETOOTH)
-            }
-
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADMIN)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.BLUETOOTH_ADMIN)
-            }
-
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
         }
 
-        // Se a lista de permissões necessárias não está vazia, solicitar permissões
         if (permissionsNeeded.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 context as Activity,
@@ -105,10 +88,10 @@ class BluetoothConnectionManager(private val context: Context) {
         if (requestCode == REQUEST_BLUETOOTH_PERMISSIONS) {
             grantResults.forEach {
                 if (it != PackageManager.PERMISSION_GRANTED) {
-                    return false // Uma ou mais permissões não foram concedidas
+                    return false
                 }
             }
-            return true // Todas as permissões foram concedidas
+            return true
         }
         return false
     }
@@ -116,15 +99,22 @@ class BluetoothConnectionManager(private val context: Context) {
     fun startServer() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(context as Activity,
+            ActivityCompat.requestPermissions(
+                context as Activity,
                 arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-                REQUEST_BLUETOOTH_CONNECT)
+                REQUEST_BLUETOOTH_CONNECT
+            )
         } else {
-            AsyncTask.execute {
+            CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val serverSocket: BluetoothServerSocket? =
-                        bluetoothAdapter?.listenUsingRfcommWithServiceRecord("integrationforlinux", uuid)
+                    val serverSocket: BluetoothServerSocket? = bluetoothAdapter?.listenUsingRfcommWithServiceRecord(
+                        "integrationforlinux", uuid)
+                    Log.d("BluetoothServer", "UUID: $uuid")
+
                     bluetoothSocket = serverSocket?.accept()
+                    bluetoothSocket?.let {
+                        Log.d("BluetoothServer", "Dispositivo conectado: ${it.remoteDevice.name} (${it.remoteDevice.address})")
+                    }
                     manageConnection(bluetoothSocket)
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -133,8 +123,9 @@ class BluetoothConnectionManager(private val context: Context) {
         }
     }
 
+
     fun startClient(device: BluetoothDevice) {
-        AsyncTask.execute {
+        CoroutineScope(Dispatchers.IO).launch {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
                 == PackageManager.PERMISSION_GRANTED
             ) {
@@ -149,16 +140,13 @@ class BluetoothConnectionManager(private val context: Context) {
                     manageConnection(bluetoothSocket)
                 } catch (e: SecurityException) {
                     Log.e("BluetoothClient", "Erro de segurança ao tentar conectar: ${e.message}", e)
-                    // Mostre uma mensagem ao usuário ou solicite a permissão necessária
                 } catch (e: IOException) {
                     Log.e("BluetoothClient", "Erro de I/O ao tentar conectar: ${e.message}", e)
-                    // Tentativa de reconexão ou informar o usuário
                 } catch (e: Exception) {
                     Log.e("BluetoothClient", "Erro inesperado ao tentar conectar: ${e.message}", e)
                 }
             } else {
                 Log.e("BluetoothClient", "Permissão BLUETOOTH_CONNECT não concedida.")
-                // Solicitar permissão ou informar o usuário
             }
         }
     }
