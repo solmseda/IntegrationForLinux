@@ -15,6 +15,9 @@ class NotificationListener : NotificationListenerService() {
                 content = content,
                 icon = icon
             )
+
+            val bluetoothManager = BluetoothConnectionManager(applicationContext)
+            bluetoothManager.sendNotification(notificationData)
         }
     }
 }

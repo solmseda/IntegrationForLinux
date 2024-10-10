@@ -12,7 +12,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.ListView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -34,43 +33,28 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        bluetoothConnectionManager = BluetoothConnectionManager(this)
+        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+
         // Verifica se o dispositivo conta com Bluetooth
-        if(!bluetoothConnectionManager.checkBluetoothAvailability(bluetoothAdapter)) finish()
+        if (!bluetoothConnectionManager.checkBluetoothAvailability(bluetoothAdapter)) finish()
 
-        bluetoothConnectionManager.checkBluetoothEnabled()
-
+        // Solicita permissões necessárias para Bluetooth
         bluetoothConnectionManager.checkAndRequestBluetoothPermissions()
 
-        // Inicializar os componentes da UI
+        // Inicializa os componentes da UI
         statusTextView = findViewById(R.id.statusTextView)
         listView = findViewById(R.id.deviceListView)
         discoveredDevicesTextView = findViewById(R.id.discoveredDevicesTextView)
 
-        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        bluetoothConnectionManager = BluetoothConnectionManager(this)
+        // Iniciar o servidor automaticamente e tornar o dispositivo visível
+        bluetoothConnectionManager.startServer()
+        statusTextView.text = "Servidor Bluetooth iniciado automaticamente"
 
-        val createServerButton: Button = findViewById(R.id.createServerButton)
-        val scanDevicesButton: Button = findViewById(R.id.scanDevicesButton)
-        val startClientButton: Button = findViewById(R.id.startClientButton)
+        // Torna o dispositivo visível para outros dispositivos Bluetooth
+        makeDeviceDiscoverable()
 
-        // Configurar o ArrayAdapter para o ListView
-        val deviceList: MutableList<String> = mutableListOf()
-        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, deviceList)
-        listView.adapter = adapter
-
-        createServerButton.setOnClickListener {
-            createServer()
-        }
-
-        scanDevicesButton.setOnClickListener {
-            Log.d("MainActivity", "Botão Procurar Dispositivos clicado")
-            scanDevices()
-        }
-
-        startClientButton.setOnClickListener {
-            startClient()
-        }
-
+        // Registro para buscar dispositivos Bluetooth
         val filter = IntentFilter(BluetoothDevice.ACTION_FOUND)
         registerReceiver(receiver, filter)
 
@@ -82,41 +66,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun scanDevices() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN),
-                REQUEST_BLUETOOTH_SCAN
-            )
-            return
+    private fun makeDeviceDiscoverable() {
+        val discoverableIntent: Intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+            putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)  // Visível por 300 segundos
         }
-
-        if (bluetoothAdapter.isDiscovering) {
-            bluetoothAdapter.cancelDiscovery() // Para qualquer busca anterior
-        }
-
-        statusTextView.text = "Procurando dispositivos..."
-        discoveredDevicesTextView.text = "Dispositivos descobertos aparecerão abaixo."
-        discoveredDevicesCount = 0 // Reinicializar o contador de dispositivos encontrados
-
-        // Iniciar a busca por dispositivos Bluetooth
-        bluetoothAdapter.startDiscovery()
-    }
-
-    private fun createServer() {
-        bluetoothConnectionManager.startServer()
-        statusTextView.text = "Servidor criado com sucesso"
-    }
-
-    private fun startClient() {
-        selectedDevice?.let {
-            bluetoothConnectionManager.startClient(it)
-            statusTextView.text = "Tentando conectar ao dispositivo: ${it.name} (${it.address})"
-        } ?: run {
-            statusTextView.text = "Nenhum dispositivo selecionado."
-        }
+        startActivity(discoverableIntent)
+        statusTextView.text = "O dispositivo está visível para outros dispositivos."
     }
 
     private val receiver = object : BroadcastReceiver() {
@@ -140,7 +95,6 @@ class MainActivity : AppCompatActivity() {
             add(deviceInfo)
             notifyDataSetChanged()
         }
-        // Incrementar o contador de dispositivos e atualizar o texto
         discoveredDevicesCount++
         discoveredDevicesTextView.text = "Dispositivos descobertos: $discoveredDevicesCount"
     }
@@ -148,9 +102,5 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(receiver)
-    }
-
-    companion object {
-        private const val REQUEST_BLUETOOTH_SCAN = 2
     }
 }
