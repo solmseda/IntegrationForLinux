@@ -109,14 +109,22 @@ class BluetoothConnectionManager(private val context: Context) {
                 try {
                     val serverSocket: BluetoothServerSocket? = bluetoothAdapter?.listenUsingRfcommWithServiceRecord(
                         "integrationforlinux", uuid)
-                    Log.d("BluetoothServer", "UUID: $uuid")
+                    Log.d("BluetoothServer", "Servidor Bluetooth iniciado, UUID: $uuid. Aguardando conexão...")
 
-                    bluetoothSocket = serverSocket?.accept()
+                    bluetoothSocket = serverSocket?.accept() // Aguarda uma conexão
+
                     bluetoothSocket?.let {
                         Log.d("BluetoothServer", "Dispositivo conectado: ${it.remoteDevice.name} (${it.remoteDevice.address})")
-                    }
-                    manageConnection(bluetoothSocket)
-                } catch (e: Exception) {
+
+                        // Gerencia a conexão (leitura e escrita)
+                        manageConnection(it)
+
+                        // Fecha o servidor após uma conexão bem-sucedida
+                        serverSocket?.close()
+                        Log.d("BluetoothServer", "Servidor Bluetooth fechado após a conexão")
+                    } ?: Log.d("BluetoothServer", "Nenhuma conexão foi estabelecida")
+                } catch (e: IOException) {
+                    Log.e("BluetoothServer", "Erro ao iniciar o servidor Bluetooth: ${e.message}")
                     e.printStackTrace()
                 }
             }
@@ -130,6 +138,8 @@ class BluetoothConnectionManager(private val context: Context) {
                 == PackageManager.PERMISSION_GRANTED
             ) {
                 try {
+                    pairDevice(device)
+
                     Log.i("BluetoothClient", "Tentando criar socket de conexão com o dispositivo.")
                     bluetoothSocket = device.createRfcommSocketToServiceRecord(uuid)
 
@@ -138,25 +148,30 @@ class BluetoothConnectionManager(private val context: Context) {
 
                     Log.i("BluetoothClient", "Conectado ao dispositivo ${device.name} (${device.address})")
                     manageConnection(bluetoothSocket)
-                } catch (e: SecurityException) {
-                    Log.e("BluetoothClient", "Erro de segurança ao tentar conectar: ${e.message}", e)
+                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", true)
                 } catch (e: IOException) {
                     Log.e("BluetoothClient", "Erro de I/O ao tentar conectar: ${e.message}", e)
+                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", false)
                 } catch (e: Exception) {
                     Log.e("BluetoothClient", "Erro inesperado ao tentar conectar: ${e.message}", e)
+                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", false)
                 }
             } else {
                 Log.e("BluetoothClient", "Permissão BLUETOOTH_CONNECT não concedida.")
+                (context as MainActivity).updateStatus("Permissão Bluetooth não concedida.")
             }
         }
     }
+
 
     private fun manageConnection(socket: BluetoothSocket?) {
         socket?.let {
             try {
                 inputStream = it.inputStream
                 outputStream = it.outputStream
-            } catch (e: Exception) {
+                Log.d("BluetoothConnection", "Conexão gerenciada com sucesso")
+            } catch (e: IOException) {
+                Log.e("BluetoothConnection", "Erro ao gerenciar a conexão: ${e.message}")
                 e.printStackTrace()
             }
         }
@@ -189,6 +204,28 @@ class BluetoothConnectionManager(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    fun isDevicePaired(deviceAddress: String): Boolean {
+        val sharedPrefs = context.getSharedPreferences("PairedDevices", Context.MODE_PRIVATE)
+        return sharedPrefs.getBoolean(deviceAddress, false)
+    }
+
+    fun pairDevice(device: BluetoothDevice) {
+        try {
+            if (device.bondState == BluetoothDevice.BOND_NONE) {
+                device.createBond()
+                Log.d("BluetoothConnection", "Iniciando pareamento com ${device.name} (${device.address})")
+                (context as MainActivity).showPairingStatus(device.name ?: "Desconhecido", true)
+            } else {
+                Log.d("BluetoothConnection", "Dispositivo já está pareado: ${device.name} (${device.address})")
+                (context as MainActivity).updateStatus("Dispositivo já está pareado")
+            }
+        } catch (e: Exception) {
+            Log.e("BluetoothConnection", "Erro ao parear dispositivo: ${e.message}")
+            (context as MainActivity).showPairingStatus(device.name ?: "Desconhecido", false)
+            e.printStackTrace()
         }
     }
 

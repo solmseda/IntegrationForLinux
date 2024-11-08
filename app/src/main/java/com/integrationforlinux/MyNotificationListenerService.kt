@@ -2,9 +2,7 @@ package com.integrationforlinux
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.content.Intent
 import android.content.pm.PackageManager
-import com.google.gson.Gson
 
 class MyNotificationListenerService : NotificationListenerService() {
     private lateinit var bluetoothConnectionManager: BluetoothConnectionManager
@@ -15,7 +13,6 @@ class MyNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Extrair informações da notificação
         val packageName = sbn.packageName
         val pm = applicationContext.packageManager
         var appName = ""
@@ -29,19 +26,14 @@ class MyNotificationListenerService : NotificationListenerService() {
 
         val notification = sbn.notification
         val extras = notification.extras
-        val text = extras.getCharSequence("android.text")?.toString() ?: "Sem conteúdo"
+        val content = extras.getCharSequence("android.text")?.toString() ?: "Sem conteúdo"
 
         val notificationData = NotificationData(
             appName = appName,
-            content = text,
+            content = content,
             icon = notification.smallIcon
         )
 
-        // Converte os dados da notificação em JSON para enviar via Bluetooth
         bluetoothConnectionManager.sendNotification(notificationData)
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        // Lidar com a remoção da notificação, se necessário
     }
 }

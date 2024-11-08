@@ -39,6 +39,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
     implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'androidx.bluetooth:bluetooth:1.0.0-alpha02'
 
     // Testes unitários
     testImplementation 'junit:junit:4.13.2'

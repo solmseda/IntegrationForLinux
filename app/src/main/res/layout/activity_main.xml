@@ -1,60 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="16dp">
 
+    <!-- Exibe o status -->
     <TextView
         android:id="@+id/statusTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Status do Servidor"
+        android:text="Status Bluetooth"
         android:textSize="18sp"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true" />
+        android:paddingBottom="16dp"/>
 
+    <!-- Botão para tornar o dispositivo visível para pareamento -->
     <Button
-        android:id="@+id/createServerButton"
+        android:id="@+id/enableDiscoverableButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Criar Servidor"
-        android:layout_below="@+id/statusTextView"
-        android:layout_marginTop="20dp"
-        android:layout_centerHorizontal="true" />
+        android:text="Permitir Pareamento" />
 
-    <Button
-        android:id="@+id/scanDevicesButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Procurar Dispositivos"
-        android:layout_below="@+id/createServerButton"
-        android:layout_marginTop="20dp"
-        android:layout_centerHorizontal="true" />
-
-    <!-- Novo botão para iniciar o cliente Bluetooth -->
-    <Button
-        android:id="@+id/startClientButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Iniciar Cliente"
-        android:layout_below="@+id/scanDevicesButton"
-        android:layout_marginTop="20dp"
-        android:layout_centerHorizontal="true" />
-
+    <!-- Exibe o tempo restante de visibilidade -->
     <TextView
-        android:id="@+id/discoveredDevicesTextView"
-        android:layout_width="match_parent"
+        android:id="@+id/discoverableCountdownTextView"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/startClientButton"
-        android:layout_marginTop="10dp"
-        android:text=""
-        android:textAppearance="?attr/textAppearanceListItem" />
+        android:text="Tempo restante de visibilidade: 0 segundos"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp"/>
 
+    <!-- Botão para mostrar dispositivos pareados -->
+    <Button
+        android:id="@+id/showPairedDevicesButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Mostrar Dispositivos Pareados" />
+
+    <!-- ListView para mostrar dispositivos pareados -->
     <ListView
-        android:id="@+id/deviceListView"
+        android:id="@+id/pairedDeviceListView"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/discoveredDevicesTextView"
-        android:layout_marginTop="20dp" />
+        android:paddingTop="16dp"/>
 
-</RelativeLayout>
+    <!-- Botão para enviar uma notificação de teste -->
+    <Button
+        android:id="@+id/sendTestNotificationButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Enviar Notificação de Teste" />
+</LinearLayout>
