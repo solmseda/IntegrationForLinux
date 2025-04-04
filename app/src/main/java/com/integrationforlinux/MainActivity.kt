@@ -38,6 +38,9 @@ class MainActivity : AppCompatActivity() {
         bluetoothConnectionManager.startServer()
         Log.d("MainActivity", "Servidor Bluetooth iniciado automaticamente ao iniciar a MainActivity")
 
+        bluetoothConnectionManager.autoConnectToPairedDevices()
+        Log.d("MainActivity", "Conectando automaticamente aos dispositivos pareados ao iniciar a MainActivity")
+
         // Inicializa os componentes de UI
         statusTextView = findViewById(R.id.statusTextView)
         discoverableCountdownTextView = findViewById(R.id.discoverableCountdownTextView)

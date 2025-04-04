@@ -229,6 +229,17 @@ class BluetoothConnectionManager(private val context: Context) {
         }
     }
 
+    fun autoConnectToPairedDevices() {
+        val pairedDevices = bluetoothAdapter?.bondedDevices ?: return
+        for (device in pairedDevices) {
+            if (device.name.contains("Integration4Linux", ignoreCase = true)) {
+                startClient(device)
+                break // ou continue tentando todos
+            }
+        }
+    }
+
+
     fun closeConnection() {
         try {
             inputStream?.close()
