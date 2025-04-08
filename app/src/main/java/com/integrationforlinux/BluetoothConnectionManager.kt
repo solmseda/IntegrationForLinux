@@ -104,33 +104,32 @@ class BluetoothConnectionManager(private val context: Context) {
                 arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
                 REQUEST_BLUETOOTH_CONNECT
             )
-        } else {
-            CoroutineScope(Dispatchers.IO).launch {
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
                 try {
-                    val serverSocket: BluetoothServerSocket? = bluetoothAdapter?.listenUsingRfcommWithServiceRecord(
-                        "integrationforlinux", uuid)
-                    Log.d("BluetoothServer", "Servidor Bluetooth iniciado, UUID: $uuid. Aguardando conexão...")
+                    val serverSocket = bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord(
+                        "integrationforlinux", uuid
+                    )
 
-                    bluetoothSocket = serverSocket?.accept() // Aguarda uma conexão
+                    Log.d("BluetoothServer", "Servidor aguardando conexão com UUID: $uuid...")
+                    val socket = serverSocket?.accept()
 
-                    bluetoothSocket?.let {
-                        Log.d("BluetoothServer", "Dispositivo conectado: ${it.remoteDevice.name} (${it.remoteDevice.address})")
-
-                        // Gerencia a conexão (leitura e escrita)
-                        manageConnection(it)
-
-                        // Fecha o servidor após uma conexão bem-sucedida
+                    if (socket != null) {
+                        Log.d("BluetoothServer", "Dispositivo conectado: ${socket.remoteDevice.name} (${socket.remoteDevice.address})")
+                        manageConnection(socket)
                         serverSocket?.close()
-                        Log.d("BluetoothServer", "Servidor Bluetooth fechado após a conexão")
-                    } ?: Log.d("BluetoothServer", "Nenhuma conexão foi estabelecida")
+                        Log.d("BluetoothServer", "Servidor reiniciado após conexão")
+                    }
+
                 } catch (e: IOException) {
-                    Log.e("BluetoothServer", "Erro ao iniciar o servidor Bluetooth: ${e.message}")
-                    e.printStackTrace()
+                    Log.e("BluetoothServer", "Erro no servidor Bluetooth: ${e.message}")
                 }
             }
         }
     }
-
 
     fun startClient(device: BluetoothDevice) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -185,12 +184,14 @@ class BluetoothConnectionManager(private val context: Context) {
         try {
             val gson = Gson()
             val jsonData = gson.toJson(notificationData)
+            Log.d("BluetoothSend", "Enviando JSON: $jsonData") // <= AQUI
             outputStream?.write(jsonData.toByteArray())
             outputStream?.flush()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("BluetoothSend", "Erro ao enviar notificação: ${e.message}")
         }
     }
+
 
     fun receiveClipboardData(): ClipboardData? {
         return try {
