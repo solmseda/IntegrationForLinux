@@ -13,90 +13,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import android.os.Build
 import android.util.Log
-import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.gson.Gson
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
-import com.google.gson.Gson
 
 class BluetoothConnectionManager(private val context: Context) {
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
-    private var bluetoothSocket: BluetoothSocket? = null
+    private var serverSocket: BluetoothServerSocket? = null
+
+    private var clientSocket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
-    private val uuid = UUID.fromString("f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
+
+    private val uuid: UUID = UUID.fromString("f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
 
     companion object {
         private const val REQUEST_BLUETOOTH_CONNECT = 1
-        private const val REQUEST_BLUETOOTH_PERMISSIONS = 101
     }
 
-    fun checkBluetoothAvailability(bluetoothAdapter: BluetoothAdapter?): Boolean {
-        if (bluetoothAdapter == null) {
-            Toast.makeText(context, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
-            return false
-        }
-        return true
-    }
-    fun checkAndRequestBluetoothPermissions(): Boolean {
-        val permissionsNeeded = mutableListOf<String>()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ requer permissões específicas para Bluetooth
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.BLUETOOTH_SCAN)
-            }
-
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE)
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsNeeded.add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            }
-        }
-
-        if (permissionsNeeded.isNotEmpty()) {
-            ActivityCompat.requestPermissions(
-                context as Activity,
-                permissionsNeeded.toTypedArray(),
-                REQUEST_BLUETOOTH_PERMISSIONS
-            )
-            return false
-        }
-
-        return true
-    }
-
-    fun checkBluetoothEnabled(){
-        if (bluetoothAdapter?.isEnabled == false) {
-            Toast.makeText(context, "Bluetooth is disabled", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ): Boolean {
-        if (requestCode == REQUEST_BLUETOOTH_PERMISSIONS) {
-            grantResults.forEach {
-                if (it != PackageManager.PERMISSION_GRANTED) {
-                    return false
-                }
-            }
-            return true
-        }
-        return false
-    }
-
+    /**
+     * Inicia o servidor Bluetooth uma única vez e aguarda conexão do Linux.
+     * Quando a conexão chega, salva o clientSocket + streams e NÃO fecha imediatamente.
+     */
     fun startServer() {
+        // Se já tiver um serverSocket aberto, não crie outro
+        if (serverSocket != null) return
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
             != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
@@ -108,145 +54,104 @@ class BluetoothConnectionManager(private val context: Context) {
         }
 
         CoroutineScope(Dispatchers.IO).launch {
-            while (true) {
-                try {
-                    val serverSocket = bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord(
-                        "integrationforlinux", uuid
-                    )
-
-                    Log.d("BluetoothServer", "Servidor aguardando conexão com UUID: $uuid...")
-                    val socket = serverSocket?.accept()
-
-                    if (socket != null) {
-                        Log.d("BluetoothServer", "Dispositivo conectado: ${socket.remoteDevice.name} (${socket.remoteDevice.address})")
-                        manageConnection(socket)
-                        serverSocket?.close()
-                        Log.d("BluetoothServer", "Servidor reiniciado após conexão")
-                    }
-
-                } catch (e: IOException) {
-                    Log.e("BluetoothServer", "Erro no servidor Bluetooth: ${e.message}")
-                }
-            }
-        }
-    }
-
-    fun startClient(device: BluetoothDevice) {
-        CoroutineScope(Dispatchers.IO).launch {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-                == PackageManager.PERMISSION_GRANTED
-            ) {
-                try {
-                    pairDevice(device)
-
-                    Log.i("BluetoothClient", "Tentando criar socket de conexão com o dispositivo.")
-                    bluetoothSocket = device.createRfcommSocketToServiceRecord(uuid)
-
-                    Log.i("BluetoothClient", "Tentando conectar ao dispositivo ${device.name} (${device.address})")
-                    bluetoothSocket?.connect()
-
-                    Log.i("BluetoothClient", "Conectado ao dispositivo ${device.name} (${device.address})")
-                    manageConnection(bluetoothSocket)
-                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", true)
-                } catch (e: IOException) {
-                    Log.e("BluetoothClient", "Erro de I/O ao tentar conectar: ${e.message}", e)
-                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", false)
-                } catch (e: Exception) {
-                    Log.e("BluetoothClient", "Erro inesperado ao tentar conectar: ${e.message}", e)
-                    (context as MainActivity).showConnectionStatus(device.name ?: "Desconhecido", false)
-                }
-            } else {
-                Log.e("BluetoothClient", "Permissão BLUETOOTH_CONNECT não concedida.")
-                (context as MainActivity).updateStatus("Permissão Bluetooth não concedida.")
-            }
-        }
-    }
-
-
-    private fun manageConnection(socket: BluetoothSocket?) {
-        socket?.let {
             try {
-                inputStream = it.inputStream
-                outputStream = it.outputStream
-                Log.d("BluetoothConnection", "Conexão gerenciada com sucesso")
+                // Cria o serverSocket apenas uma vez
+                serverSocket = bluetoothAdapter
+                    ?.listenUsingInsecureRfcommWithServiceRecord("integrationforlinux", uuid)
+
+                Log.d("BluetoothConnManager", "Servidor aguardando conexão com UUID: $uuid...")
+                // Bloqueia até que o Linux conecte
+                clientSocket = serverSocket?.accept()
+
+                clientSocket?.let { socket ->
+                    Log.d("BluetoothConnManager", "Dispositivo conectado: ${socket.remoteDevice.name} (${socket.remoteDevice.address})")
+
+                    // **Armazena o input/output streams para enviar notificações depois**
+                    inputStream = socket.inputStream
+                    outputStream = socket.outputStream
+
+                    Log.d("BluetoothConnManager", "Conexão gerenciada com sucesso — streams prontos")
+
+                    listenForMessages()
+                }
             } catch (e: IOException) {
-                Log.e("BluetoothConnection", "Erro ao gerenciar a conexão: ${e.message}")
-                e.printStackTrace()
+                Log.e("BluetoothConnManager", "Erro no servidor Bluetooth: ${e.message}")
             }
         }
     }
 
-    fun authenticate() {
-        // TODO
+    /**
+     * Fica lendo (em background) qualquer mensagem que o Linux enviar.
+     * (Aqui podemos logar ou exibir no Android, se quisermos.)
+     */
+    private fun listenForMessages() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val buffer = ByteArray(1024)
+                while (true) {
+                    val bytesRead = inputStream?.read(buffer) ?: -1
+                    if (bytesRead < 0) {
+                        Log.d("BluetoothConnManager", "O Linux desconectou. Encerrando loop de leitura.")
+                        break
+                    }
+                    val mensagem = String(buffer, 0, bytesRead)
+                    Log.d("BluetoothConnManager", "Mensagem recebida do Linux: $mensagem")
+                }
+            } catch (e: IOException) {
+                Log.e("BluetoothConnManager", "Erro ao ler mensagens: ${e.message}")
+            } finally {
+                // Quando o loop termina (Linux desconectou), fecha o socket
+                closeClientSocket()
+            }
+        }
     }
 
+    /**
+     * Envia a NotificationData (como JSON) para o Linux, usando o clientSocket que está ativo.
+     * Se outputStream for nulo, significa que ainda não houve conexão do Linux → Android.
+     */
     fun sendNotification(notificationData: NotificationData) {
         try {
+            if (outputStream == null) {
+                Log.d("BluetoothConnManager", "Nenhuma conexão ativa com Linux para envio.")
+                return
+            }
             val gson = Gson()
             val jsonData = gson.toJson(notificationData)
-            Log.d("BluetoothSend", "Enviando JSON: $jsonData") // <= AQUI
-            outputStream?.write(jsonData.toByteArray())
-            outputStream?.flush()
+            Log.d("BluetoothConnManager", "Enviando JSON para Linux: $jsonData")
+            outputStream!!.write(jsonData.toByteArray())
+            outputStream!!.flush()
         } catch (e: Exception) {
-            Log.e("BluetoothSend", "Erro ao enviar notificação: ${e.message}")
+            Log.e("BluetoothConnManager", "Erro ao enviar notificação: ${e.message}")
         }
     }
 
-
-    fun receiveClipboardData(): ClipboardData? {
-        return try {
-            val buffer = ByteArray(1024)
-            val data = StringBuilder()
-            var bytesRead: Int
-            while (inputStream?.read(buffer).also { bytesRead = it ?: -1 } != -1) {
-                data.append(String(buffer, 0, bytesRead))
-            }
-            ClipboardData(data.toString())
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    fun isDevicePaired(deviceAddress: String): Boolean {
-        val sharedPrefs = context.getSharedPreferences("PairedDevices", Context.MODE_PRIVATE)
-        return sharedPrefs.getBoolean(deviceAddress, false)
-    }
-
-    fun pairDevice(device: BluetoothDevice) {
-        try {
-            if (device.bondState == BluetoothDevice.BOND_NONE) {
-                device.createBond()
-                Log.d("BluetoothConnection", "Iniciando pareamento com ${device.name} (${device.address})")
-                (context as MainActivity).showPairingStatus(device.name ?: "Desconhecido", true)
-            } else {
-                Log.d("BluetoothConnection", "Dispositivo já está pareado: ${device.name} (${device.address})")
-                (context as MainActivity).updateStatus("Dispositivo já está pareado")
-            }
-        } catch (e: Exception) {
-            Log.e("BluetoothConnection", "Erro ao parear dispositivo: ${e.message}")
-            (context as MainActivity).showPairingStatus(device.name ?: "Desconhecido", false)
-            e.printStackTrace()
-        }
-    }
-
-    fun autoConnectToPairedDevices() {
-        val pairedDevices = bluetoothAdapter?.bondedDevices ?: return
-        for (device in pairedDevices) {
-            if (device.name.contains("Integration4Linux", ignoreCase = true)) {
-                startClient(device)
-                break // ou continue tentando todos
-            }
-        }
-    }
-
-
-    fun closeConnection() {
+    /**
+     * Se quisermos desconectar o Linux manualmente (ou no onDestroy do app), fechamos esse socket.
+     */
+    fun closeClientSocket() {
         try {
             inputStream?.close()
             outputStream?.close()
-            bluetoothSocket?.close()
-        } catch (e: Exception) {
+            clientSocket?.close()
+            inputStream = null
+            outputStream = null
+            clientSocket = null
+            Log.d("BluetoothConnManager", "ClientSocket fechado.")
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Fecha o servidor completamente (também no onDestroy, se desejado).
+     */
+    fun closeServerSocket() {
+        try {
+            serverSocket?.close()
+            serverSocket = null
+            Log.d("BluetoothConnManager", "ServerSocket fechado.")
+        } catch (e: IOException) {
             e.printStackTrace()
         }
     }

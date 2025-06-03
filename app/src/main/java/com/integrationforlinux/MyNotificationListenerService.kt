@@ -2,25 +2,24 @@ package com.integrationforlinux
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.content.pm.PackageManager
+import android.util.Log
 
 class MyNotificationListenerService : NotificationListenerService() {
-    private lateinit var bluetoothConnectionManager: BluetoothConnectionManager
-
     override fun onCreate() {
         super.onCreate()
-        bluetoothConnectionManager = BluetoothConnectionManager(this)
+        // Inicializa o singleton para garantir que o BluetoothConnectionManager exista
+        BluetoothSingleton.init(this)
+        Log.d("NotificationService", "MyNotificationListenerService criado e BluetoothSingleton iniciado")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
         val pm = applicationContext.packageManager
-        var appName = ""
-
+        var appName = packageName
         try {
             val packageInfo = pm.getPackageInfo(packageName, 0)
             appName = packageInfo.applicationInfo.loadLabel(pm).toString()
-        } catch (e: PackageManager.NameNotFoundException) {
+        } catch (e: Exception) {
             e.printStackTrace()
         }
 
@@ -34,6 +33,8 @@ class MyNotificationListenerService : NotificationListenerService() {
             icon = notification.smallIcon
         )
 
-        bluetoothConnectionManager.sendNotification(notificationData)
+        Log.d("NotificationService", "Notificação recebida de $appName: $content")
+        // Envia via singleton (que reusa a mesma instância de BluetoothConnectionManager)
+        BluetoothSingleton.sendNotification(notificationData)
     }
 }
