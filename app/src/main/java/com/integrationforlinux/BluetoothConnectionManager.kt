@@ -2,20 +2,26 @@ package com.integrationforlinux
 
 import android.Manifest
 import android.app.Activity
+import android.app.Notification
+import android.app.PendingIntent
+import android.app.RemoteInput
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.os.Bundle
 import android.util.Base64
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -79,8 +85,8 @@ class BluetoothConnectionManager(private val context: Context) {
                         pendingNotifications.clear()
                     }
 
-                    // Só registra que o socket está vivo; não lemos nada do Linux.
-                    Log.d("BluetoothConnManager", "Socket ficará aberto para envio contínuo de notificações.")
+                    // Inicia a escuta por mensagens do Linux (respostas)
+                    listenForMessages()
                 }
             } catch (e: IOException) {
                 Log.e("BluetoothConnManager", "Erro no servidor Bluetooth: ${e.message}")
@@ -103,6 +109,9 @@ class BluetoothConnectionManager(private val context: Context) {
                     }
                     val mensagem = String(buffer, 0, bytesRead)
                     Log.d("BluetoothConnManager", "Mensagem recebida do Linux: $mensagem")
+
+                    // Tenta desserializar a mensagem como uma resposta
+                    handleReplyMessage(mensagem)
                 }
             } catch (e: IOException) {
                 Log.e("BluetoothConnManager", "Erro ao ler mensagens: ${e.message}")
@@ -156,7 +165,8 @@ class BluetoothConnectionManager(private val context: Context) {
             val payload = mapOf(
                 "appName" to notificationData.appName,
                 "content" to notificationData.content,
-                "iconBase64" to iconBase64
+                "iconBase64" to iconBase64,
+                "key" to notificationData.key // Inclui a chave da notificação no JSON
             )
 
             // 3) Serializar com Gson
@@ -231,4 +241,45 @@ class BluetoothConnectionManager(private val context: Context) {
         }
     }
 
+    private fun handleReplyMessage(jsonMessage: String) {
+        try {
+            val gson = Gson()
+            // Define o tipo esperado para desserialização
+            val messageType = object : TypeToken<Map<String, String>>() {}.type
+            val messageMap: Map<String, String> = gson.fromJson(jsonMessage, messageType)
+
+            val notificationKey = messageMap["key"]
+            val replyText = messageMap["reply"]
+
+            if (notificationKey != null && replyText != null) {
+                Log.d("BluetoothConnManager", "Tentando responder à notificação: $notificationKey com texto: $replyText")
+                // Obter o NotificationListenerService para acessar a ação de resposta
+                val notificationListener = BluetoothSingleton.getNotificationListenerService()
+                notificationListener?.getReplyAction(notificationKey)?.let { action ->
+                    val remoteInputs = action.remoteInputs
+                    val intent = Intent()
+                    val bundle = Bundle()
+
+                    remoteInputs?.forEach { remoteInput ->
+                        bundle.putCharSequence(remoteInput.resultKey, replyText)
+                    }
+                    RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
+
+                    try {
+                        action.intent.send(context, 0, intent)
+                        Log.d("BluetoothConnManager", "Resposta enviada para: $notificationKey")
+                    } catch (e: PendingIntent.CanceledException) {
+                        Log.e("BluetoothConnManager", "Falha ao enviar resposta para $notificationKey: ${e.message}")
+                    }
+                } ?: run {
+                    Log.d("BluetoothConnManager", "Nenhuma ação de resposta encontrada para a chave: $notificationKey")
+                }
+            } else {
+                Log.d("BluetoothConnManager", "Mensagem recebida não é uma resposta válida ou falta a chave/texto.")
+            }
+        } catch (e: Exception) {
+            Log.e("BluetoothConnManager", "Erro ao processar mensagem de resposta JSON: ${e.message}")
+            // Não faz nada se a mensagem não for um JSON de resposta esperado
+        }
+    }
 }

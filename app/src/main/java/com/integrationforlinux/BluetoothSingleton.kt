@@ -2,10 +2,12 @@ package com.integrationforlinux
 
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import java.lang.ref.WeakReference
 
 object BluetoothSingleton {
     private var initialized = false
     private lateinit var manager: BluetoothConnectionManager
+    private var notificationListenerServiceRef: WeakReference<MyNotificationListenerService>? = null
 
     /**
      * Deve ser chamado em toda Activity/Service que precise de Bluetooth,
@@ -41,5 +43,13 @@ object BluetoothSingleton {
     fun closeServer() {
         manager.closeClientSocket()
         manager.closeServerSocket()
+    }
+
+    fun registerNotificationListenerService(service: MyNotificationListenerService) {
+        notificationListenerServiceRef = WeakReference(service)
+    }
+
+    fun getNotificationListenerService(): MyNotificationListenerService? {
+        return notificationListenerServiceRef?.get()
     }
 }
