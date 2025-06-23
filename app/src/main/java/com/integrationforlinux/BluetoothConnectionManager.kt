@@ -275,7 +275,14 @@ class BluetoothConnectionManager(private val context: Context) {
                     Log.d("BluetoothConnManager", "Nenhuma ação de resposta encontrada para a chave: $notificationKey")
                 }
             } else {
-                Log.d("BluetoothConnManager", "Mensagem recebida não é uma resposta válida ou falta a chave/texto.")
+                var logMessage = "Mensagem recebida não é uma resposta válida."
+                if (notificationKey == null) {
+                    logMessage += " O campo 'key' está faltando."
+                }
+                if (replyText == null) {
+                    logMessage += " O campo 'reply' está faltando."
+                }
+                Log.d("BluetoothConnManager", logMessage)
             }
         } catch (e: Exception) {
             Log.e("BluetoothConnManager", "Erro ao processar mensagem de resposta JSON: ${e.message}")
