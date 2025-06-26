@@ -51,25 +51,25 @@ class BluetoothConnectionManager(private val context: Context) {
      * Quando receber a conexão, armazena clientSocket + streams.
      */
     fun startServer() {
-        if (serverSocket != null) return
-
+        // 1) Verifica se temos permissão BLUETOOTH_CONNECT (e ADVERTISE em Android 12+)
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                context as Activity,
-                arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-                REQUEST_BLUETOOTH_CONNECT
-            )
+            != PackageManager.PERMISSION_GRANTED
+            || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE)
+                    != PackageManager.PERMISSION_GRANTED)
+        ) {
+            Log.w("BluetoothConnManager", "Permissões BT faltando, não iniciando servidor.")
             return
         }
 
+        if (serverSocket != null) return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 serverSocket = bluetoothAdapter
-                    ?.listenUsingInsecureRfcommWithServiceRecord("integrationforlinux", uuid)
+                    ?.listenUsingRfcommWithServiceRecord("integrationforlinux", uuid)
 
                 Log.d("BluetoothConnManager", "Servidor aguardando conexão com UUID: $uuid...")
-                clientSocket = serverSocket?.accept()  // bloqueia até o Python conectar
+                clientSocket = serverSocket?.accept()
 
                 clientSocket?.let { socket ->
                     Log.d("BluetoothConnManager", "Dispositivo conectado: ${socket.remoteDevice.name} (${socket.remoteDevice.address})")
@@ -77,15 +77,13 @@ class BluetoothConnectionManager(private val context: Context) {
                     outputStream = socket.outputStream
                     Log.d("BluetoothConnManager", "Conexão agora ESTÁ ATIVA — streams prontos")
 
-                    // Envia pendentes (se houver)
+                    // envia pendentes
                     synchronized(pendingNotifications) {
-                        for (notif in pendingNotifications) {
-                            sendNotificationInternal(notif)
-                        }
+                        pendingNotifications.forEach { sendNotificationInternal(it) }
                         pendingNotifications.clear()
                     }
 
-                    // Inicia a escuta por mensagens do Linux (respostas)
+                    // começa a receber
                     listenForMessages()
                 }
             } catch (e: IOException) {

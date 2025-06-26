@@ -20,11 +20,13 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_BLUETOOTH_PERMISSIONS = 100
+        private const val REQUEST_DISCOVERABLE = 1
     }
 
     private lateinit var bluetoothAdapter: BluetoothAdapter
@@ -40,20 +42,21 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Se for Android 12+, pede BLUETOOTH_CONNECT e afins em runtime
+        // Solicita permissões em runtime para Android 12+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(
                     Manifest.permission.BLUETOOTH_CONNECT,
                     Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_ADVERTISE,
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 ),
                 REQUEST_BLUETOOTH_PERMISSIONS
             )
         } else {
-            // Android < 12: não exige runtime, pode iniciar direto
+            // Android <12: inicializa diretamente
             inicializarBluetoothECarregarUI()
         }
     }
@@ -79,18 +82,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Chama o singleton para iniciar o servidor Bluetooth e, em seguida,
-     * monta toda a interface (botões, listagem, etc.).
-     */
-    private fun inicializarBluetoothECarregarUI() {
-        // 1) Inicializa o singleton e abre o servidor (= aceita conexões do Linux)
-        BluetoothSingleton.init(this)
-        Log.d("MainActivity", "Inicializando BluetoothSingleton")
-        BluetoothSingleton.startServerAndAutoConnect()
-        Log.d("MainActivity", "Servidor Bluetooth aguardando conexão persistente")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_DISCOVERABLE && resultCode > 0) {
+            // Usuário aceitou ser discoverable: inicia o servidor Bluetooth
+            BluetoothSingleton.startServerAndAutoConnect()
+            statusTextView.text = "Servidor Bluetooth iniciado"
+            Log.d("MainActivity", "Servidor Bluetooth iniciado após discoverable")
+        }
+    }
 
-        // 2) Configura todas as Views
+    private fun inicializarBluetoothECarregarUI() {
+        // 1) Inicializa o singleton (servidor será iniciado após permissões ou discoverable)
+        BluetoothSingleton.init(this)
+        Log.d("MainActivity", "BluetoothSingleton inicializado")
+
+        // 2) Configura Views
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         statusTextView = findViewById(R.id.statusTextView)
         discoverableCountdownTextView = findViewById(R.id.discoverableCountdownTextView)
@@ -99,43 +106,40 @@ class MainActivity : AppCompatActivity() {
         enableDiscoverableButton = findViewById(R.id.enableDiscoverableButton)
         sendTestNotificationButton = findViewById(R.id.sendTestNotificationButton)
 
-        // 3) Se o usuário ainda não habilitou o serviço de notificações, abre as configurações
+        // Se o NotificationListenerService não estiver ativo, abre as configurações
         if (!isNotificationServiceEnabled(this)) {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
-        // 4) Botão “Mostrar dispositivos pareados”
+        // Botão: mostrar dispositivos pareados com Linux
         showPairedDevicesButton.setOnClickListener {
             showPairedWithLinuxDevices()
         }
 
-        // 5) Botão “Tornar visível via Bluetooth”
+        // Botão: tornar dispositivo discoverable
         enableDiscoverableButton.setOnClickListener {
             makeDeviceDiscoverable()
         }
 
-        // 6) Botão “Enviar notificação de teste”
+        // Botão: enviar notificação de teste via Bluetooth
         sendTestNotificationButton.setOnClickListener {
             val testNotification = NotificationData(
                 appName = "Aplicação de Teste",
                 content = "Esta é uma notificação de teste enviada via Bluetooth.",
                 icon = null,
-                key = "test_notification_key_${System.currentTimeMillis()}" // Adiciona uma chave única para o teste
+                key = "test_notification_key_${System.currentTimeMillis()}"
             )
             BluetoothSingleton.sendNotification(testNotification)
             statusTextView.text = "Notificação de teste enviada"
         }
 
-        // 7) Recebe broadcast de mudança no modo de descoberta para atualizar o timer
+        // Receiver para atualização do timer de discoverable
         registerReceiver(
             discoverabilityReceiver,
             IntentFilter(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)
         )
     }
 
-    /**
-     * Checa no Settings se o NotificationListenerService está ativo para este app.
-     */
     private fun isNotificationServiceEnabled(context: Context): Boolean {
         val pkgName = context.packageName
         val flat = Settings.Secure.getString(
@@ -145,24 +149,17 @@ class MainActivity : AppCompatActivity() {
         return !TextUtils.isEmpty(flat) && flat.contains(pkgName)
     }
 
-    /**
-     * Torna o dispositivo Android descoberto por 300 segundos,
-     * e exibe um CountDownTimer na tela.
-     */
     private fun makeDeviceDiscoverable() {
         val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
             putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
         }
-        startActivity(discoverableIntent)
+        startActivityForResult(discoverableIntent, REQUEST_DISCOVERABLE)
         startCountdownTimer(300)
     }
 
-    /**
-     * Mostra um CountDownTimer de 300 segundos para visibilidade.
-     */
     private fun startCountdownTimer(durationSeconds: Int) {
         countdownTimer?.cancel()
-        countdownTimer = object : CountDownTimer(durationSeconds * 1000L, 1000) {
+        countdownTimer = object : CountDownTimer(durationSeconds * 1000L, 1000L) {
             override fun onTick(millisUntilFinished: Long) {
                 val secondsRemaining = millisUntilFinished / 1000
                 discoverableCountdownTextView.text =
@@ -174,10 +171,6 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    /**
-     * Recebe broadcast de mudança no modo de descoberta
-     * para atualizar o timer na UI.
-     */
     private val discoverabilityReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == BluetoothAdapter.ACTION_SCAN_MODE_CHANGED) {
@@ -193,33 +186,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Lista, na ListView, todos os dispositivos pareados cujo nome
-     * contenha "Integration4Linux" (útil para debug/visualizar).
-     */
     private fun showPairedWithLinuxDevices() {
         val pairedDevices = bluetoothAdapter.bondedDevices
         val deviceList = ArrayList<String>()
-
         for (device in pairedDevices) {
             if (device.name.contains("Integration4Linux", ignoreCase = true)) {
-                val deviceName = device.name ?: "Unknown"
-                val deviceAddress = device.address
-                deviceList.add("$deviceName\n$deviceAddress")
+                deviceList.add("${device.name}\n${device.address}")
             }
         }
-
-        statusTextView.text =
-            if (deviceList.isNotEmpty()) "Dispositivos pareados com a aplicação Linux"
-            else "Nenhum dispositivo Linux pareado encontrado"
-
-        val adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, deviceList)
-        listView.adapter = adapter
+        statusTextView.text = if (deviceList.isNotEmpty())
+            "Dispositivos pareados com a aplicação Linux"
+        else
+            "Nenhum dispositivo Linux pareado encontrado"
+        listView.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_1,
+            deviceList
+        )
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(discoverabilityReceiver)
-        // BluetoothSingleton.closeServer() 
     }
 }
