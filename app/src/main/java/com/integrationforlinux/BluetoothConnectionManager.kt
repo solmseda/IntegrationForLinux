@@ -2,20 +2,26 @@ package com.integrationforlinux
 
 import android.Manifest
 import android.app.Activity
+import android.app.Notification
+import android.app.PendingIntent
+import android.app.RemoteInput
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.os.Bundle
 import android.util.Base64
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -79,8 +85,8 @@ class BluetoothConnectionManager(private val context: Context) {
                         pendingNotifications.clear()
                     }
 
-                    // Só registra que o socket está vivo; não lemos nada do Linux.
-                    Log.d("BluetoothConnManager", "Socket ficará aberto para envio contínuo de notificações.")
+                    // Inicia a escuta por mensagens do Linux (respostas)
+                    listenForMessages()
                 }
             } catch (e: IOException) {
                 Log.e("BluetoothConnManager", "Erro no servidor Bluetooth: ${e.message}")
@@ -103,6 +109,9 @@ class BluetoothConnectionManager(private val context: Context) {
                     }
                     val mensagem = String(buffer, 0, bytesRead)
                     Log.d("BluetoothConnManager", "Mensagem recebida do Linux: $mensagem")
+
+                    // Tenta desserializar a mensagem como uma resposta
+                    handleReplyMessage(mensagem)
                 }
             } catch (e: IOException) {
                 Log.e("BluetoothConnManager", "Erro ao ler mensagens: ${e.message}")
@@ -145,23 +154,21 @@ class BluetoothConnectionManager(private val context: Context) {
                 val drawable: Drawable? =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         icon.loadDrawable(context)
-                    } else {
-                        // para APIs antigas, converta de outra forma se necessário
-                        null
-                    }
+                    } else null
                 drawable?.let { drawableToBase64(it) }
             }
 
-            // 2) Criar um mapa temporário para serializar
-            val payload = mapOf(
-                "appName" to notificationData.appName,
-                "content" to notificationData.content,
-                "iconBase64" to iconBase64
+            // 2) Criar um mapa temporário para serializar, incluindo sender
+            val payload = mutableMapOf<String, Any?>(
+                "appName"   to notificationData.appName,
+                "sender"    to notificationData.sender,    // <<< adicionado
+                "content"   to notificationData.content,
+                "iconBase64" to iconBase64,
+                "key"       to notificationData.key        // chave da notificação
             )
 
             // 3) Serializar com Gson
-            val gson = Gson()
-            val jsonData = gson.toJson(payload)
+            val jsonData = Gson().toJson(payload)
 
             Log.d("BluetoothConnManager", "Enviando JSON para Linux: $jsonData")
             outputStream!!.write(jsonData.toByteArray())
@@ -201,34 +208,81 @@ class BluetoothConnectionManager(private val context: Context) {
      */
     private fun sendNotificationInternal(notificationData: NotificationData) {
         try {
-            // 1) Convertendo Icon? → Drawable? → Base64
+            // 1) Base64 do ícone
             val iconBase64: String? = notificationData.icon?.let { icon ->
                 val drawable: Drawable? =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         icon.loadDrawable(context)
-                    } else {
-                        null
-                    }
+                    } else null
                 drawable?.let { drawableToBase64(it) }
             }
 
-            // 2) Cria o payload Map
-            val payload = mapOf(
-                "appName" to notificationData.appName,
-                "content" to notificationData.content,
-                "iconBase64" to iconBase64
+            // 2) Payload incluindo sender
+            val payload = mutableMapOf<String, Any?>(
+                "appName"   to notificationData.appName,
+                "sender"    to notificationData.sender,    // <<< adicionado
+                "content"   to notificationData.content,
+                "iconBase64" to iconBase64,
+                "key"       to notificationData.key
             )
 
-            // 3) Serializa com Gson
-            val gson = Gson()
-            val jsonData = gson.toJson(payload)
+            // 3) Gson
+            val jsonData = Gson().toJson(payload)
 
-            Log.d("BluetoothConnManager", "Enviando JSON para Linux: $jsonData")
+            Log.d("BluetoothConnManager", "Enviando JSON interno para Linux: $jsonData")
             outputStream!!.write(jsonData.toByteArray())
             outputStream!!.flush()
         } catch (e: Exception) {
-            Log.e("BluetoothConnManager", "Erro ao enviar notificação: ${e.message}")
+            Log.e("BluetoothConnManager", "Erro ao enviar notificação interna: ${e.message}")
         }
     }
 
+    private fun handleReplyMessage(jsonMessage: String) {
+        try {
+            val gson = Gson()
+            // Define o tipo esperado para desserialização
+            val messageType = object : TypeToken<Map<String, String>>() {}.type
+            val messageMap: Map<String, String> = gson.fromJson(jsonMessage, messageType)
+
+            val notificationKey = messageMap["key"]
+            val replyText = messageMap["reply"]
+
+            if (notificationKey != null && replyText != null) {
+                Log.d("BluetoothConnManager", "Tentando responder à notificação: $notificationKey com texto: $replyText")
+                // Obter o NotificationListenerService para acessar a ação de resposta
+                val notificationListener = BluetoothSingleton.getNotificationListenerService()
+                notificationListener?.getReplyAction(notificationKey)?.let { action ->
+                    val remoteInputs = action.remoteInputs
+                    val intent = Intent()
+                    val bundle = Bundle()
+
+                    remoteInputs?.forEach { remoteInput ->
+                        bundle.putCharSequence(remoteInput.resultKey, replyText)
+                    }
+                    RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
+
+                    try {
+                        action.actionIntent.send(context, 0, intent)
+                        Log.d("BluetoothConnManager", "Resposta enviada para: $notificationKey")
+                    } catch (e: PendingIntent.CanceledException) {
+                        Log.e("BluetoothConnManager", "Falha ao enviar resposta para $notificationKey: ${e.message}")
+                    }
+                } ?: run {
+                    Log.d("BluetoothConnManager", "Nenhuma ação de resposta encontrada para a chave: $notificationKey")
+                }
+            } else {
+                var logMessage = "Mensagem recebida não é uma resposta válida."
+                if (notificationKey == null) {
+                    logMessage += " O campo 'key' está faltando."
+                }
+                if (replyText == null) {
+                    logMessage += " O campo 'reply' está faltando."
+                }
+                Log.d("BluetoothConnManager", logMessage)
+            }
+        } catch (e: Exception) {
+            Log.e("BluetoothConnManager", "Erro ao processar mensagem de resposta JSON: ${e.message}")
+            // Não faz nada se a mensagem não for um JSON de resposta esperado
+        }
+    }
 }

@@ -119,7 +119,8 @@ class MainActivity : AppCompatActivity() {
             val testNotification = NotificationData(
                 appName = "Aplicação de Teste",
                 content = "Esta é uma notificação de teste enviada via Bluetooth.",
-                icon = null
+                icon = null,
+                key = "test_notification_key_${System.currentTimeMillis()}" // Adiciona uma chave única para o teste
             )
             BluetoothSingleton.sendNotification(testNotification)
             statusTextView.text = "Notificação de teste enviada"

@@ -1,69 +1,113 @@
 package com.integrationforlinux
 
+import android.app.Notification
+import android.app.RemoteInput
 import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.google.gson.Gson
 
 class MyNotificationListenerService : NotificationListenerService() {
 
-    // Conjunto para rastrear notificações enviadas recentemente (por key)
+    // Conjunto para rastrear notificações enviadas recentemente
     private val sentNotificationKeys = mutableSetOf<String>()
+    // Armazena ações de reply para notificações de chat
+    private val replyActions = mutableMapOf<String, Notification.Action>()
+
+    companion object {
+        private const val WHATSAPP_PACKAGE_NAME = "com.whatsapp"
+        private const val TELEGRAM_PACKAGE_NAME = "org.telegram.messenger"
+    }
 
     override fun onCreate() {
         super.onCreate()
-        // Inicializa o singleton e garante que o servidor já esteja aguardando conexão
+        // Inicializa o singleton e mantém o servidor Bluetooth ativo
         BluetoothSingleton.init(applicationContext)
+        BluetoothSingleton.registerNotificationListenerService(this)
         BluetoothSingleton.startServerAndAutoConnect()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Obtém a "key" única dessa notificação (inclui packageName + id + tag)
-        val notificationKey = sbn.key
+        // 1) Obtém a key única (packageName + id + tag)
+        val key = sbn.key
 
-        // Se já enviamos essa mesma key, ignoramos para evitar duplicata
-        if (sentNotificationKeys.contains(notificationKey)) {
+        // 2) Ignora duplicatas de notificações já enviadas
+        if (!sentNotificationKeys.add(key)) {
             return
         }
 
-        // Marca como enviada
-        sentNotificationKeys.add(notificationKey)
-
-        // Extrai o nome legível do app (fallback para packageName)
+        // 3) Resolve nome legível do app (fallback para packageName)
         val packageName = sbn.packageName
-        val pm = applicationContext.packageManager
-        var appName = packageName
-        try {
-            val packageInfo = pm.getPackageInfo(packageName, 0)
-            appName = packageInfo.applicationInfo.loadLabel(pm).toString()
+        val appName = try {
+            val pm = applicationContext.packageManager
+            pm.getPackageInfo(packageName, 0)
+                .applicationInfo
+                .loadLabel(pm)
+                .toString()
         } catch (e: PackageManager.NameNotFoundException) {
-            e.printStackTrace()
+            packageName
         }
 
-        // Obtém o conteúdo principal da notificação
+        // 4) Extrai conteúdo e sender (título da notificação)
         val notification = sbn.notification
         val extras = notification.extras
-        val content = extras.getCharSequence("android.text")?.toString() ?: "Sem conteúdo"
+        val content = extras.getCharSequence(Notification.EXTRA_TEXT)
+            ?.toString()
+            ?: extras.getCharSequence("android.text")
+                ?.toString()
+            ?: "Sem conteúdo"
+        val sender = extras.getCharSequence(Notification.EXTRA_TITLE)
+            ?.toString()
+            ?: appName
 
-        // Obtém o ícone (pode ser null)
-        val icon = notification.smallIcon
-
-        // Monta o objeto NotificationData
-        val notificationData = NotificationData(
+        // 5) Monta objeto NotificationData com sender opcional
+        val data = NotificationData(
             appName = appName,
+            sender  = sender,
             content = content,
-            icon = icon
+            icon    = notification.smallIcon,
+            key     = key
         )
 
-        Log.d("NotificationService", "Notificação recebida de $appName: $content")
+        // Serializa para JSON
+        val gson = Gson()
+        val jsonData = gson.toJson(data)
 
-        // Envia via Bluetooth usando o singleton
-        BluetoothSingleton.sendNotification(notificationData)
+        // **DEBUG**: imprime todo o payload no logcat
+        Log.d("NotificationService", "Payload completo para Linux: $jsonData")
+
+        Log.d("NotificationService", "Notificação recebida de $sender: $content")
+
+        // 6) Envia via Bluetooth
+        BluetoothSingleton.sendNotification(data)
+
+        // 7) Se app de chat, armazena ação de resposta
+        if (packageName == WHATSAPP_PACKAGE_NAME || packageName == TELEGRAM_PACKAGE_NAME) {
+            notification.actions
+                ?.firstOrNull { action ->
+                    action.remoteInputs
+                        ?.any { it.resultKey.isNotEmpty() }
+                        ?: false
+                }
+                ?.let { act ->
+                    replyActions[key] = act
+                    Log.d("NotificationService", "Reply action salva para $key")
+                }
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        // Quando uma notificação é removida, liberamos a key para que,
-        // caso volte a ser postada, ela possa ser enviada novamente.
-        sentNotificationKeys.remove(sbn.key)
+        // Quando a notificação some, limpa key e ação de reply
+        val key = sbn.key
+        sentNotificationKeys.remove(key)
+        replyActions.remove(key)
+        Log.d("NotificationService", "Notificação removida, key liberada: $key")
+    }
+
+    // Método para obter ação de reply armazenada
+    fun getReplyAction(notificationKey: String): Notification.Action? {
+        return replyActions[notificationKey]
     }
 }

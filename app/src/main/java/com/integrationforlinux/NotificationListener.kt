@@ -13,11 +13,14 @@ class NotificationListener : NotificationListenerService() {
             val notificationData = NotificationData(
                 appName = appName,
                 content = content,
-                icon = icon
+                icon = icon,
+                key = sbn.key // Adiciona a chave da notificação
             )
 
-            val bluetoothManager = BluetoothConnectionManager(applicationContext)
-            bluetoothManager.sendNotification(notificationData)
+            // Utilize o BluetoothSingleton para enviar a notificação
+            // Não crie uma nova instância de BluetoothConnectionManager aqui
+            BluetoothSingleton.init(applicationContext) // Garante que o Singleton está inicializado
+            BluetoothSingleton.sendNotification(notificationData)
         }
     }
 }
