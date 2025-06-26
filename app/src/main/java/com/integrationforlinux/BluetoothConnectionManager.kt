@@ -154,24 +154,21 @@ class BluetoothConnectionManager(private val context: Context) {
                 val drawable: Drawable? =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         icon.loadDrawable(context)
-                    } else {
-                        // para APIs antigas, converta de outra forma se necessário
-                        null
-                    }
+                    } else null
                 drawable?.let { drawableToBase64(it) }
             }
 
-            // 2) Criar um mapa temporário para serializar
-            val payload = mapOf(
-                "appName" to notificationData.appName,
-                "content" to notificationData.content,
+            // 2) Criar um mapa temporário para serializar, incluindo sender
+            val payload = mutableMapOf<String, Any?>(
+                "appName"   to notificationData.appName,
+                "sender"    to notificationData.sender,    // <<< adicionado
+                "content"   to notificationData.content,
                 "iconBase64" to iconBase64,
-                "key" to notificationData.key // Inclui a chave da notificação no JSON
+                "key"       to notificationData.key        // chave da notificação
             )
 
             // 3) Serializar com Gson
-            val gson = Gson()
-            val jsonData = gson.toJson(payload)
+            val jsonData = Gson().toJson(payload)
 
             Log.d("BluetoothConnManager", "Enviando JSON para Linux: $jsonData")
             outputStream!!.write(jsonData.toByteArray())
@@ -211,33 +208,32 @@ class BluetoothConnectionManager(private val context: Context) {
      */
     private fun sendNotificationInternal(notificationData: NotificationData) {
         try {
-            // 1) Convertendo Icon? → Drawable? → Base64
+            // 1) Base64 do ícone
             val iconBase64: String? = notificationData.icon?.let { icon ->
                 val drawable: Drawable? =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         icon.loadDrawable(context)
-                    } else {
-                        null
-                    }
+                    } else null
                 drawable?.let { drawableToBase64(it) }
             }
 
-            // 2) Cria o payload Map
-            val payload = mapOf(
-                "appName" to notificationData.appName,
-                "content" to notificationData.content,
-                "iconBase64" to iconBase64
+            // 2) Payload incluindo sender
+            val payload = mutableMapOf<String, Any?>(
+                "appName"   to notificationData.appName,
+                "sender"    to notificationData.sender,    // <<< adicionado
+                "content"   to notificationData.content,
+                "iconBase64" to iconBase64,
+                "key"       to notificationData.key
             )
 
-            // 3) Serializa com Gson
-            val gson = Gson()
-            val jsonData = gson.toJson(payload)
+            // 3) Gson
+            val jsonData = Gson().toJson(payload)
 
-            Log.d("BluetoothConnManager", "Enviando JSON para Linux: $jsonData")
+            Log.d("BluetoothConnManager", "Enviando JSON interno para Linux: $jsonData")
             outputStream!!.write(jsonData.toByteArray())
             outputStream!!.flush()
         } catch (e: Exception) {
-            Log.e("BluetoothConnManager", "Erro ao enviar notificação: ${e.message}")
+            Log.e("BluetoothConnManager", "Erro ao enviar notificação interna: ${e.message}")
         }
     }
 
@@ -266,7 +262,7 @@ class BluetoothConnectionManager(private val context: Context) {
                     RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
 
                     try {
-                        action.intent.send(context, 0, intent)
+                        action.actionIntent.send(context, 0, intent)
                         Log.d("BluetoothConnManager", "Resposta enviada para: $notificationKey")
                     } catch (e: PendingIntent.CanceledException) {
                         Log.e("BluetoothConnManager", "Falha ao enviar resposta para $notificationKey: ${e.message}")
